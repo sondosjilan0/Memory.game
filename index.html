@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+[hidden] { display: none !important; }
+</style>
+<title>Memory Grid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: one centered game card (level pill + title, prompt line, 4x3 tile grid, timer / answer panel), matching the reference screenshot. Dark-only by design. */
+:root {
+  --page: #0a0d1c;
+  --page-2: #111637;
+  --card: #12162b;
+  --tile: #232c4c;
+  --tile-hidden: #1c2342;
+  --tile-line: #313d6a;
+  --panel: #29365a;
+  --opt: #1d2545;
+  --ink: #ffffff;
+  --muted: #a9b1da;
+  --accent: #8fe3ff;
+  --good: #4ccf6a;
+  --good-bg: #17352e;
+  --bad: #ff6f7d;
+  --bad-bg: #4a2232;
+  --display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --text: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  color-scheme: dark;
+}
+html { min-height: 100%; background: var(--page); }
+body {
+  min-height: 100dvh;
+  background: linear-gradient(180deg, var(--page) 0%, var(--page-2) 100%), var(--page);
+  color: var(--ink);
+  font-family: var(--text);
+  font-size: 16px;
+  line-height: 1.45;
+}
+.stage {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-block: clamp(16px, 4vh, 48px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+}
+.card {
+  background: var(--card);
+  border-radius: 28px;
+  padding: clamp(16px, 3vw, 34px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 2vw, 22px);
+  min-width: 0;
+}
+.gridcol, .side { display: flex; flex-direction: column; gap: clamp(14px, 2vw, 22px); min-width: 0; }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.pill {
+  background: var(--good-bg);
+  color: var(--good);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  font-size: clamp(14px, 2vw, 22px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+h1 {
+  margin: 0;
+  font-weight: 700;
+  font-size: clamp(24px, 4.6vw, 44px);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+.prompt { margin: 0; text-align: center; text-wrap: balance; min-height: 2.6em; display: flex; align-items: center; justify-content: center; }
+.prompt.cue { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: clamp(14px, 2.2vw, 24px); }
+.prompt.q { color: var(--ink); font-weight: 600; font-size: clamp(20px, 3.2vw, 32px); }
+
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(8px, 1.6vw, 18px); }
+.tile {
+  aspect-ratio: 1.5;
+  min-width: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: clamp(12px, 2vw, 20px);
+  background: var(--tile);
+  color: var(--ink);
+  font: 400 clamp(30px, 7vw, 66px)/1 var(--text), var(--emoji);
+  font-family: var(--text), var(--emoji);
+  cursor: default;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.tile.hidden, .tile.ask { background: var(--tile-hidden); color: #4d5a92; font-weight: 600; }
+.tile.ask { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 26px rgba(143, 227, 255, 0.35); }
+.tile.right { border-color: var(--good); box-shadow: 0 0 22px rgba(76, 207, 106, 0.35); }
+.tile.wrong { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); font-weight: 700; }
+.grid.tap .tile { cursor: pointer; }
+.grid.tap .tile:hover { border-color: var(--accent); }
+.tile:focus-visible, .btn:focus-visible, .opt:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+.panel {
+  background: var(--panel);
+  border-radius: 22px;
+  padding: clamp(16px, 2.6vw, 28px);
+  min-height: clamp(130px, 18vw, 190px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+.clock {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(48px, 10vw, 92px);
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.clock.low { color: var(--bad); }
+.label { font-size: clamp(13px, 1.8vw, 20px); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.ask-sym { font: 400 clamp(48px, 9vw, 84px)/1 var(--text), var(--emoji); font-family: var(--text), var(--emoji); }
+
+.opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 12px; width: 100%; }
+.opt {
+  position: relative;
+  min-width: 0;
+  padding: 14px 8px;
+  border-radius: 16px;
+  border: 2px solid transparent;
+  background: var(--opt);
+  color: var(--ink);
+  font: 600 clamp(18px, 2.6vw, 24px)/1.1 var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.opt.emoji { font: 400 clamp(34px, 6vw, 54px)/1.1 var(--text), var(--emoji); font-family: var(--text), var(--emoji); }
+.opt:hover { border-color: var(--accent); }
+.opt.locked { pointer-events: none; opacity: 0.55; }
+.opt.right { opacity: 1; background: var(--good-bg); border-color: var(--good); }
+.opt.right::after { content: "\2713"; position: absolute; top: 6px; right: 10px; font: 700 16px/1 var(--text); color: var(--good); }
+.opt.wrong { opacity: 1; background: var(--bad-bg); border-color: var(--bad); }
+.opt.wrong::after { content: "\00D7"; position: absolute; top: 6px; right: 10px; font: 700 18px/1 var(--text); color: var(--bad); }
+
+.feedback { margin: 0; font-size: clamp(16px, 2.2vw, 22px); font-weight: 600; }
+.feedback.good { color: #7ee79a; }
+.feedback.bad { color: #ff9aa5; }
+.feedback.neutral { color: var(--ink); font-weight: 500; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.actions:empty { display: none; }
+.btn {
+  flex: 1 1 180px;
+  font: 700 clamp(16px, 2.2vw, 20px)/1 var(--text);
+  padding: 18px 24px;
+  border-radius: 16px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent); color: #06182a; }
+.btn.primary:hover { background: #b6efff; }
+.btn.secondary { background: transparent; color: var(--ink); border-color: rgba(255, 255, 255, 0.4); }
+.btn.secondary:hover { background: rgba(255, 255, 255, 0.08); }
+
+.talk { background: var(--card); border: 1px solid var(--tile-line); border-radius: 22px; padding: clamp(18px, 3vw, 30px); }
+.talk[hidden] { display: none; }
+.talk h2 { margin: 0 0 12px; font-family: var(--display); font-size: clamp(20px, 2.8vw, 28px); }
+.talk ul { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; color: var(--muted); font-size: clamp(15px, 1.9vw, 19px); }
+.talk li strong { color: var(--ink); font-weight: 600; }
+.talk .ask { margin: 16px 0 0; font-weight: 500; font-size: clamp(15px, 1.9vw, 19px); }
+
+/* Landscape / wide screens: grid on the left, prompt + timer + buttons on the right, sized to fit one screen */
+@media (min-aspect-ratio: 5/4) and (min-width: 700px) {
+  .stage { max-width: 1280px; min-height: 100dvh; justify-content: center; padding-block: clamp(10px, 3vh, 32px); box-sizing: border-box; }
+  .card { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); column-gap: clamp(20px, 3vw, 44px); row-gap: clamp(10px, 2vh, 20px); align-items: stretch; padding: clamp(14px, 3vh, 32px) clamp(18px, 3vw, 40px); }
+  .top { grid-column: 1 / -1; }
+  .gridcol { justify-content: center; }
+  .side { justify-content: center; }
+  .prompt { min-height: 0; }
+  .panel { min-height: clamp(110px, 24vh, 220px); }
+  .tile { aspect-ratio: 1.35; font-size: clamp(26px, min(5.4vw, 10vh), 70px); }
+  .clock { font-size: clamp(44px, min(8vw, 15vh), 100px); }
+  .btn { padding-block: clamp(12px, 2.4vh, 20px); }
+}
+@media (max-height: 460px) and (min-aspect-ratio: 5/4) {
+  .pill { padding: 6px 14px; }
+  h1 { font-size: 22px; }
+  .card { border-radius: 18px; }
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .tile, .opt, .btn { transition: none; }
+}
+</style>
+</head>
+<body>
+<main class="stage">
+  <article class="card">
+    <header class="top">
+      <span class="pill" id="pill">LEVEL 01</span>
+      <h1>Memory Challenge</h1>
+    </header>
+    <div class="gridcol">
+      <div class="grid" id="grid" role="group" aria-label="Memory grid, 4 columns by 3 rows"></div>
+    </div>
+    <div class="side">
+      <p class="prompt cue" id="prompt"></p>
+      <section class="panel" id="panel"></section>
+      <div class="actions" id="actions"></div>
+    </div>
+  </article>
+
+  <aside class="talk" id="talk" hidden>
+    <h2>What just happened?</h2>
+    <ul>
+      <li><strong>You tried to hold 12 symbols in working memory.</strong> Most people can keep about four items in mind at once (Cowan, 2001), so most answers came from what you looked at and linked together.</li>
+      <li><strong>Attention decides what gets stored.</strong> A symbol you never looked at could not be recalled, however long the timer ran.</li>
+      <li><strong>Action games exercise this skill.</strong> Players track many moving targets and switch focus fast. Green and Bavelier (2003) found action gamers beat non-gamers on visual attention tasks, though how far the benefit carries over to everyday life is still debated.</li>
+      <li><strong>The same design also captures attention.</strong> Short loops, rewards and notifications shape what players do next. That is the link to the rest of this talk.</li>
+    </ul>
+    <p class="ask">Ask the room: which questions were easiest, what was there, where it was, or which row?</p>
+  </aside>
+  <div class="sr" id="sr" aria-live="polite"></div>
+</main>
+
+<script>
+(function () {
+  var COLS = 4, TOTAL = 12, SHOW_MS = 10000, READY_S = 3, QN = 3;
+  var POOL = [
+    { e: '💎', n: 'diamond' },
+    { e: '🍄', n: 'mushroom' },
+    { e: '⭐', n: 'star' },
+    { e: '🎮', n: 'game controller' },
+    { e: '⚡', n: 'lightning bolt' },
+    { e: '❤️', n: 'heart' },
+    { e: '👾', n: 'space invader' },
+    { e: '🚀', n: 'rocket' },
+    { e: '🎲', n: 'dice' },
+    { e: '🛡️', n: 'shield' },
+    { e: '🔑', n: 'key' },
+    { e: '🎯', n: 'target' },
+    { e: '🏆', n: 'trophy' },
+    { e: '🧩', n: 'puzzle piece' },
+    { e: '🔥', n: 'flame' },
+    { e: '👑', n: 'crown' },
+    { e: '🪙', n: 'coin' },
+    { e: '💣', n: 'bomb' },
+    { e: '⚔️', n: 'crossed swords' },
+    { e: '🕹️', n: 'joystick' },
+    { e: '🎧', n: 'headphones' },
+    { e: '🧪', n: 'potion' }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var grid = $('grid'), pill = $('pill'), promptEl = $('prompt'), panel = $('panel'),
+      actionsEl = $('actions'), talk = $('talk'), sr = $('sr');
+  var tiles = [], layout = [], decoys = [], questions = [], qi = 0, score = 0, phase = 'idle', timer = null;
+
+  function shuffle(a) {
+    a = a.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function posText(i) { return 'row ' + (Math.floor(i / COLS) + 1) + ', column ' + (i % COLS + 1); }
+  function announce(t) { sr.textContent = t; }
+
+  for (var k = 0; k < TOTAL; k++) {
+    (function (idx) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tile hidden';
+      b.addEventListener('click', function () { onTile(idx); });
+      grid.appendChild(b);
+      tiles.push(b);
+    })(k);
+  }
+
+  function drawTile(i, state) {
+    var t = tiles[i], p = layout[i];
+    var pos = posText(i);
+    t.className = 'tile ' + state;
+    if ((state === 'shown' || state === 'right') && p) {
+      t.textContent = p.e;
+      t.setAttribute('aria-label', pos + ': ' + p.n);
+    } else if (state === 'wrong') {
+      t.textContent = '×';
+      t.setAttribute('aria-label', pos + ': wrong choice');
+    } else {
+      t.textContent = '?';
+      t.setAttribute('aria-label', pos + ': hidden');
+    }
+  }
+  function drawAll(state) { for (var i = 0; i < TOTAL; i++) drawTile(i, state); }
+  function setTap(on) {
+    grid.classList.toggle('tap', on);
+    tiles.forEach(function (t) { t.tabIndex = on ? 0 : -1; });
+  }
+  function setPrompt(text, cls) { promptEl.className = 'prompt ' + cls; promptEl.textContent = text; }
+  function setActions(list) {
+    actionsEl.innerHTML = '';
+    list.forEach(function (a) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ' + a.kind;
+      b.textContent = a.label;
+      if (a.expanded !== undefined) b.setAttribute('aria-expanded', String(a.expanded));
+      b.addEventListener('click', function () { a.run(b); });
+      actionsEl.appendChild(b);
+    });
+  }
+  function clockPanel(text, label, low) {
+    panel.innerHTML = '';
+    var c = document.createElement('div');
+    c.className = 'clock' + (low ? ' low' : '');
+    c.id = 'clock';
+    c.textContent = text;
+    var l = document.createElement('div');
+    l.className = 'label';
+    l.textContent = label;
+    panel.appendChild(c);
+    panel.appendChild(l);
+    return c;
+  }
+
+  function idle() {
+    clearInterval(timer);
+    phase = 'idle';
+    layout = [];
+    drawAll('hidden');
+    setTap(false);
+    talk.hidden = true;
+    pill.textContent = 'LEVEL 01';
+    setPrompt('Press start, then memorize the symbols', 'cue');
+    clockPanel('00:' + pad(SHOW_MS / 1000), 'Time to memorize');
+    setActions([{ label: 'Start challenge', kind: 'primary', run: start }]);
+  }
+
+  function buildQuestions() {
+    var cells = shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).slice(0, QN);
+    var types = shuffle(['A', 'B', 'C', 'D']).slice(0, QN);
+    questions = types.map(function (type, n) {
+      var cell = cells[n], sym = layout[cell], row = Math.floor(cell / COLS), col = cell % COLS;
+      var q = { type: type, cell: cell, symbol: sym, options: [] };
+      if (type === 'A') {
+        q.prompt = 'Which symbol was in row ' + (row + 1) + ', column ' + (col + 1) + '?';
+        q.options = shuffle([sym].concat(shuffle(layout.filter(function (x) { return x !== sym; })).slice(0, 2)))
+          .map(function (s) { return { label: s.e, aria: s.n, value: s.e, emoji: true }; });
+        q.answer = sym.e;
+        q.explain = 'It was ' + sym.e + ' (' + sym.n + ').';
+      } else if (type === 'B') {
+        q.prompt = 'Tap the tile where this symbol was.';
+        q.answer = cell;
+        q.explain = 'It was in ' + posText(cell) + '.';
+      } else if (type === 'C') {
+        var odd = shuffle(decoys)[0];
+        q.odd = odd;
+        q.prompt = 'Which of these was NOT in the grid?';
+        q.options = shuffle([odd].concat(shuffle(layout).slice(0, 2)))
+          .map(function (s) { return { label: s.e, aria: s.n, value: s.e, emoji: true }; });
+        q.answer = odd.e;
+        q.explain = 'The ' + odd.e + ' (' + odd.n + ') was never shown.';
+      } else {
+        q.prompt = 'Which row was this symbol in? ' + sym.e;
+        q.options = [0, 1, 2].map(function (r) { return { label: 'Row ' + (r + 1), aria: 'Row ' + (r + 1), value: r, emoji: false }; });
+        q.answer = row;
+        q.explain = 'It was in row ' + (row + 1) + '.';
+      }
+      return q;
+    });
+  }
+
+  function start() {
+    clearInterval(timer);
+    var s = shuffle(POOL);
+    layout = s.slice(0, TOTAL);
+    decoys = s.slice(TOTAL);
+    buildQuestions();
+    phase = 'ready';
+    drawAll('hidden');
+    setTap(false);
+    talk.hidden = true;
+    pill.textContent = 'LEVEL 01';
+    setPrompt('Get ready', 'cue');
+    announce('Get ready.');
+    setActions([]);
+    var n = READY_S;
+    clockPanel(String(n), 'Starting in');
+    timer = setInterval(function () {
+      n--;
+      if (n <= 0) { clearInterval(timer); watch(); }
+      else { clockPanel(String(n), 'Starting in'); }
+    }, 1000);
+  }
+
+  function watch() {
+    phase = 'watch';
+    drawAll('shown');
+    setPrompt('Memorize the symbols!', 'cue');
+    announce('Memorize the symbols.');
+    var end = performance.now() + SHOW_MS;
+    var clock = clockPanel('00:' + pad(SHOW_MS / 1000), 'Time left');
+    timer = setInterval(function () {
+      var left = Math.max(0, end - performance.now());
+      var s = Math.ceil(left / 1000);
+      clock.textContent = '00:' + pad(s);
+      clock.classList.toggle('low', s <= 3);
+      if (left <= 0) { clearInterval(timer); startQuiz(); }
+    }, 100);
+  }
+
+  function startQuiz() { qi = 0; score = 0; showQuestion(); }
+
+  function showQuestion() {
+    var q = questions[qi];
+    phase = 'quiz';
+    drawAll('hidden');
+    setTap(q.type === 'B');
+    pill.textContent = 'QUESTION ' + (qi + 1) + ' / ' + QN;
+    setPrompt(q.prompt, 'q');
+    announce(q.prompt);
+    if (q.type === 'A') drawTile(q.cell, 'ask');
+    panel.innerHTML = '';
+    if (q.type === 'B') {
+      var big = document.createElement('div');
+      big.className = 'ask-sym';
+      big.textContent = q.symbol.e;
+      big.setAttribute('role', 'img');
+      big.setAttribute('aria-label', q.symbol.n);
+      var l = document.createElement('div');
+      l.className = 'label';
+      l.textContent = 'Find this symbol';
+      panel.appendChild(big);
+      panel.appendChild(l);
+    } else {
+      var wrap = document.createElement('div');
+      wrap.className = 'opts';
+      q.options.forEach(function (o) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'opt' + (o.emoji ? ' emoji' : '');
+        b.textContent = o.label;
+        b.setAttribute('aria-label', o.aria);
+        b.addEventListener('click', function () { answerChoice(o.value, b); });
+        o.el = b;
+        wrap.appendChild(b);
+      });
+      panel.appendChild(wrap);
+    }
+    setActions([]);
+  }
+
+  function showFeedback(ok, text) {
+    var p = document.createElement('p');
+    p.className = 'feedback ' + (ok ? 'good' : 'bad');
+    p.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (ok && questions[qi].type !== 'C' ? '' : text);
+    panel.appendChild(p);
+    announce(p.textContent);
+    var last = qi >= QN - 1;
+    setActions([{ label: last ? 'See results' : 'Next question', kind: 'primary', run: function () {
+      if (last) results(); else { qi++; showQuestion(); }
+    } }]);
+  }
+
+  function answerChoice(value) {
+    if (phase !== 'quiz') return;
+    phase = 'feedback';
+    var q = questions[qi], ok = value === q.answer;
+    if (ok) score++;
+    q.options.forEach(function (o) {
+      var b = o.el;
+      b.classList.add('locked');
+      if (o.value === q.answer) b.classList.add('right');
+      else if (o.value === value) b.classList.add('wrong');
+    });
+    if (q.type === 'A') drawTile(q.cell, 'right');
+    showFeedback(ok, q.explain);
+  }
+
+  function onTile(i) {
+    var q = questions[qi];
+    if (phase !== 'quiz' || !q || q.type !== 'B') return;
+    phase = 'feedback';
+    var ok = i === q.cell;
+    if (ok) { score++; drawTile(i, 'right'); }
+    else { drawTile(i, 'wrong'); drawTile(q.cell, 'right'); }
+    setTap(false);
+    showFeedback(ok, q.explain);
+  }
+
+  function results() {
+    phase = 'done';
+    setTap(false);
+    drawAll('shown');
+    pill.textContent = 'RESULTS';
+    setPrompt('The grid, revealed', 'cue');
+    var msg = score === QN ? 'Perfect recall.' : score >= 2 ? 'Solid. Most of the grid stuck.' : 'Hard to hold. That is normal, and that is the point.';
+    clockPanel(score + ' / ' + QN, 'Correct answers');
+    var m = document.createElement('p');
+    m.className = 'feedback neutral';
+    m.textContent = msg;
+    panel.appendChild(m);
+    announce('You answered ' + score + ' of ' + QN + ' correctly. ' + msg);
+    setActions([
+      { label: 'Play again', kind: 'primary', run: start },
+      { label: 'Why this matters', kind: 'secondary', expanded: !talk.hidden, run: function (b) {
+          talk.hidden = !talk.hidden;
+          b.setAttribute('aria-expanded', String(!talk.hidden));
+          if (!talk.hidden) talk.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } },
+      { label: 'Restart', kind: 'secondary', run: idle }
+    ]);
+  }
+
+  idle();
+})();
+</script>
+</body>
+</html>
